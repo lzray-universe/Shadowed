@@ -1,0 +1,92 @@
+package moe.tachyon.shadowed.database
+
+import moe.tachyon.shadowed.dataClass.ChatId
+import moe.tachyon.shadowed.dataClass.UserId
+import org.jetbrains.exposed.dao.id.CompositeIdTable
+import org.jetbrains.exposed.sql.JoinType
+import org.jetbrains.exposed.sql.ReferenceOption
+import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.insertIgnore
+import org.jetbrains.exposed.sql.insertIgnoreAndGetId
+import org.jetbrains.exposed.sql.selectAll
+import org.koin.core.component.get
+
+class Friends: SqlDao<Friends.FriendTable>(FriendTable)
+{
+    object FriendTable: CompositeIdTable("friends")
+    {
+        val userA = reference(
+            "user_a",
+            Users.UserTable,
+            onDelete = ReferenceOption.CASCADE,
+            onUpdate = ReferenceOption.CASCADE
+        ).index()
+        val userB = reference(
+            "user_b",
+            Users.UserTable,
+            onDelete = ReferenceOption.CASCADE,
+            onUpdate = ReferenceOption.CASCADE
+        ).index()
+        val chat = reference(
+            "chat",
+            Chats.ChatTable,
+            onDelete = ReferenceOption.CASCADE,
+            onUpdate = ReferenceOption.CASCADE
+        ).index()
+
+        init
+        {
+            addIdColumn(userA)
+            addIdColumn(userB)
+        }
+    }
+
+    suspend fun addFriend(
+        userAId: UserId,
+        userBId: UserId,
+    ): ChatId? = query()
+    {
+        val chatTable = get<Chats>().table
+
+        val userA = minOf(userAId, userBId)
+        val userB = maxOf(userAId, userBId)
+
+        // Check if friendship already exists
+        val existingFriend = selectAll().where { (table.userA eq userA) and (table.userB eq userB) }.singleOrNull()
+        if (existingFriend != null)
+        {
+            // Return the existing chat ID instead of null
+            return@query existingFriend[table.chat].value
+        }
+
+        val chatName = "Friend Chat ($userA, $userB)"
+        val chat = chatTable.insertIgnoreAndGetId()
+        {
+            it[this.name] = chatName
+            it[this.owner] = userA
+            it[this.private] = true
+        }?.value ?: return@query null
+        insertIgnoreAndGetId()
+        {
+            it[this.userA] = userA
+            it[this.userB] = userB
+            it[this.chat] = chat
+        }
+        chat
+    }
+
+    suspend fun getFriends(userId: UserId): List<Pair<UserId, String>> = query()
+    {
+        val userTable = get<Users>().table
+        val queryA = table.join(userTable, JoinType.INNER, table.userB, userTable.id)
+            .selectAll()
+            .where { table.userA eq userId }
+            .map { it[userTable.id].value to it[userTable.username] }
+        val queryB = table.join(userTable, JoinType.INNER, table.userA, userTable.id)
+            .selectAll()
+            .where { table.userB eq userId }
+            .map { it[userTable.id].value to it[userTable.username] }
+
+        (queryA + queryB).distinctBy { it.first }
+    }
+}

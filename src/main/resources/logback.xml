@@ -1,0 +1,6 @@
+<configuration>
+    <appender name="CUSTOM" class="moe.tachyon.shadowed.logger.LogbackAppender"/>
+    <root level="all">
+        <appender-ref ref="CUSTOM"/>
+    </root>
+</configuration>
