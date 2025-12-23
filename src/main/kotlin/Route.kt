@@ -15,6 +15,7 @@ import io.ktor.websocket.*
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.datetime.Clock
+import kotlinx.io.asSource
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -31,7 +32,7 @@ import java.io.ByteArrayInputStream
 import javax.imageio.ImageIO
 
 private val sessions = java.util.concurrent.ConcurrentHashMap<UserId, DefaultWebSocketServerSession>()
-private val SERVER_AUTH_KEY = "shadowed_auth_key_v1"
+private const val SERVER_AUTH_KEY = "shadowed_auth_key_v1"
 
 private fun getKoin() = object : KoinComponent { }.getKoin()
 private val logger = ShadowedLogger.getLogger()
@@ -238,7 +239,13 @@ fun Application.router() = routing()
             val username = call.request.header("X-Auth-User")
             val passwordHash = call.request.header("X-Auth-Token")
             val messageType = call.request.header("X-Message-Type")?.let(MessageType::fromString)
-            val fileBase64 = call.receiveText().encodeToByteArray()
+            val bodySize = call.request.header(HttpHeaders.ContentLength)?.toIntOrNull() ?: return@post call.respond(HttpStatusCode.LengthRequired)
+            if (bodySize > environment.config.property("maxImageSize").getString().toLong())
+            {
+                call.respond(HttpStatusCode.PayloadTooLarge, "File size exceeds limit")
+                return@post
+            }
+            val fileBase64 = call.receiveStream()
             if (chat == null || username == null || passwordHash == null || messageType == null)
                 return@post call.respond(HttpStatusCode.BadRequest)
             val users = getKoin().get<Users>()
@@ -275,7 +282,7 @@ fun Application.router() = routing()
             val messageId = call.pathParameters["messageId"]?.toLongOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
             val fileBytes = FileUtils.getChatFile(messageId) ?: return@get call.respond(HttpStatusCode.NotFound)
             call.response.header(HttpHeaders.CacheControl, "max-age=${30*24*60*60}") // 30 days
-            call.respondText(fileBytes.decodeToString())
+            call.respondSource(fileBytes.asSource(), ContentType.Text.Plain)
         }
 
         webSocket()

@@ -28,3 +28,4 @@ database:
 
     # 数据库懒惰初始化
     lazyInit: true
+maxImageSize: 10485760 # 10MB

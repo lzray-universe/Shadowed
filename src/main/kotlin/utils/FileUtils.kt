@@ -6,6 +6,7 @@ import moe.tachyon.shadowed.dataClass.UserId
 import moe.tachyon.shadowed.dataDir
 import java.awt.image.BufferedImage
 import java.io.File
+import java.io.InputStream
 import javax.imageio.ImageIO
 
 object FileUtils
@@ -36,22 +37,26 @@ object FileUtils
         }
     }
 
-    suspend fun saveChatFile(messageId: Long, bytes: ByteArray)
+    suspend fun saveChatFile(messageId: Long, bytes: InputStream)
     {
         val chatFile = File(chatFilesDir, "$messageId.dat")
         withContext(Dispatchers.IO)
         {
-            chatFile.writeBytes(bytes)
+            bytes.use { input ->
+                chatFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
         }
     }
 
-    suspend fun getChatFile(messageId: Long): ByteArray? = runCatching()
+    suspend fun getChatFile(messageId: Long): InputStream? = runCatching()
     {
         val chatFile = File(chatFilesDir, "$messageId.dat")
         if (!chatFile.exists()) return null
         return withContext(Dispatchers.IO)
         {
-            chatFile.readBytes()
+            chatFile.inputStream()
         }
     }.getOrNull()
 }
