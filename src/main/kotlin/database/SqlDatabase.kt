@@ -67,6 +67,7 @@ object SqlDatabase: KoinComponent
     )
 
     val databases: List<KClass<out SqlDao<*>>> = listOf(
+        Broadcasts::class,
         ChatMembers::class,
         Chats::class,
         Friends::class,

@@ -6,6 +6,7 @@ import moe.tachyon.shadowed.logger.ShadowedLogger
  * Command set.
  */
 object CommandSet: TreeCommand(
+    Broadcast,
     Config,
     Stop,
     Help,
@@ -15,6 +16,7 @@ object CommandSet: TreeCommand(
     Color,
     Run,
     Code,
+    TestDatabase,
 ), CommandHandler
 {
     private val logger = ShadowedLogger.getLogger()

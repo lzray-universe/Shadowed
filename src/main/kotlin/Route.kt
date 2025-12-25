@@ -4,7 +4,6 @@ import at.favre.lib.crypto.bcrypt.BCrypt
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.application.*
-import io.ktor.server.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -40,15 +39,6 @@ private val logger = ShadowedLogger.getLogger()
 
 fun Application.router() = routing()
 {
-    get("/")
-    {
-        call.respondBytes(
-            Loader.getResource("/static/index.html")!!.readAllBytes(),
-            contentType = ContentType.Text.Html
-        )
-    }
-    staticResources("/", "static")
-
     val users by getKoin().inject<Users>()
 
     route("/api")
@@ -762,14 +752,16 @@ private fun Route.webSocket() = webSocket("/socket") socket@
 
                 if (!isOwner)
                 {
-                    return@collect send(contentNegotiationJson.encodeToString(
+                    return@collect send(
+                        contentNegotiationJson.encodeToString(
                         NotifyPacket(NotifyPacket.Type.ERROR, "Only owner can rename chat")
                     ))
                 }
 
                 chats.renameChat(chatId, newName)
 
-                send(contentNegotiationJson.encodeToString(
+                send(
+                    contentNegotiationJson.encodeToString(
                     NotifyPacket(NotifyPacket.Type.INFO, "Chat renamed successfully")
                 ))
             }
@@ -901,6 +893,57 @@ private fun Route.webSocket() = webSocket("/socket") socket@
                     s.sendChatList(targetUser.id)
                 }
             }
+
+            if (packetName.equals("send_broadcast", ignoreCase = true))
+            {
+                val (message, anonymous) = runCatching()
+                {
+                    val json = contentNegotiationJson.parseToJsonElement(packetData)
+                    val message = json.jsonObject["message"]!!.jsonPrimitive.content
+                    val anon = json.jsonObject["anonymous"]!!.jsonPrimitive.boolean
+                    Pair(message, anon)
+                }.getOrNull() ?: return@collect send(
+                    contentNegotiationJson.encodeToString(
+                        NotifyPacket(
+                            type = NotifyPacket.Type.ERROR,
+                            message = "Broadcast failed: Invalid packet format",
+                        )
+                    )
+                )
+                val broadcasts = getKoin().get<Broadcasts>()
+                val id = broadcasts.addBroadcast(
+                    content = message,
+                    senderId = if (anonymous) null else loginUser.id,
+                )
+                renewBroadcast(id)
+            }
+
+            if (packetName.equals("get_broadcasts", ignoreCase = true))
+            {
+                val (system, before, count) = runCatching()
+                {
+                    val json = contentNegotiationJson.parseToJsonElement(packetData)
+                    val sys = json.jsonObject["system"]?.jsonPrimitive?.booleanOrNull
+                    val bef = json.jsonObject["before"]!!.jsonPrimitive.long
+                    val cnt = json.jsonObject["count"]!!.jsonPrimitive.int
+                    Triple(sys, bef, cnt)
+                }.getOrNull() ?: return@collect send(
+                    contentNegotiationJson.encodeToString(
+                        NotifyPacket(
+                            type = NotifyPacket.Type.ERROR,
+                            message = "Get broadcasts failed: Invalid packet format",
+                        )
+                    )
+                )
+
+                val broadcasts = getKoin().get<Broadcasts>().getBroadcasts(system, before, count)
+                val response = buildJsonObject()
+                {
+                    put("packet", "broadcasts_list")
+                    put("broadcasts", contentNegotiationJson.encodeToJsonElement(broadcasts))
+                }
+                return@collect send(contentNegotiationJson.encodeToString(response))
+            }
         }
     }
     finally
@@ -996,4 +1039,18 @@ private suspend fun WebSocketSession.sendChatDetails(chat: Chat, members: List<U
         })
     }
     return send(contentNegotiationJson.encodeToString(response))
+}
+
+suspend fun renewBroadcast(broadcastId: Long)
+{
+    val broadcast = getKoin().get<Broadcasts>().getBroadcast(broadcastId)?.let(::listOf)?.let(contentNegotiationJson::encodeToJsonElement) ?: return
+    for (s in sessionsMutex.withLock { sessions.values.flatten().toList() }) runCatching()
+    {
+        val response = buildJsonObject()
+        {
+            put("packet", "broadcasts_list")
+            put("broadcasts", broadcast)
+        }
+        s.send(contentNegotiationJson.encodeToString(response))
+    }
 }
