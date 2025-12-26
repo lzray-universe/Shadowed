@@ -10,5 +10,6 @@ data class ChatMember(
     val parsedOtherNames: List<String>,
     val parsedOtherIds: List<Int>,
     val isPrivate: Boolean,
-    val unreadCount: Int
+    val unreadCount: Int,
+    val doNotDisturb: Boolean,
 )

@@ -10,10 +10,10 @@ import moe.tachyon.shadowed.database.*
 import moe.tachyon.shadowed.dataClass.*
 import moe.tachyon.shadowed.route.*
 
-object GetChatsHandler : PacketHandler
+object GetChatsHandler: PacketHandler
 {
     override val packetName = "get_chats"
-    
+
     override suspend fun handle(
         session: DefaultWebSocketServerSession,
         packetData: String,
@@ -24,10 +24,10 @@ object GetChatsHandler : PacketHandler
     }
 }
 
-object GetMessagesHandler : PacketHandler
+object GetMessagesHandler: PacketHandler
 {
     override val packetName = "get_messages"
-    
+
     override suspend fun handle(
         session: DefaultWebSocketServerSession,
         packetData: String,
@@ -35,13 +35,14 @@ object GetMessagesHandler : PacketHandler
     )
     {
         val (chatId, begin, count) = runCatching()
-        {
-            val json = contentNegotiationJson.parseToJsonElement(packetData)
-            val cid = json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
-            val start = json.jsonObject["begin"]!!.jsonPrimitive.long
-            val limit = json.jsonObject["count"]!!.jsonPrimitive.int
-            Triple(cid, start, limit)
-        }.getOrNull() ?: return session.sendError("Get messages failed: Invalid packet format")
+                                     {
+                                         val json = contentNegotiationJson.parseToJsonElement(packetData)
+                                         val cid = json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
+                                         val start = json.jsonObject["begin"]!!.jsonPrimitive.long
+                                         val limit = json.jsonObject["count"]!!.jsonPrimitive.int
+                                         Triple(cid, start, limit)
+                                     }.getOrNull()
+                                     ?: return session.sendError("Get messages failed: Invalid packet format")
 
         if (getKoin().get<ChatMembers>().getUserChats(loginUser.id).none { it.chatId == chatId })
             return session.sendError("Get messages failed: You are not a member of this chat")
@@ -62,10 +63,10 @@ object GetMessagesHandler : PacketHandler
     }
 }
 
-object SendMessageHandler : PacketHandler
+object SendMessageHandler: PacketHandler
 {
     override val packetName = "send_message"
-    
+
     override suspend fun handle(
         session: DefaultWebSocketServerSession,
         packetData: String,
@@ -79,13 +80,14 @@ object SendMessageHandler : PacketHandler
             val type: MessageType,
         )
         val (chatId, message, type) = runCatching()
-        {
-            contentNegotiationJson.decodeFromString<SendMessage>(packetData)
-        }.getOrNull() ?: return session.sendError("Send message failed: Invalid packet format")
-        
+                                      {
+                                          contentNegotiationJson.decodeFromString<SendMessage>(packetData)
+                                      }.getOrNull()
+                                      ?: return session.sendError("Send message failed: Invalid packet format")
+
         if (getKoin().get<ChatMembers>().getUserChats(loginUser.id).none { it.chatId == chatId })
             return session.sendError("Send message failed: You are not a member of this chat")
-        
+
         val messages = getKoin().get<Messages>()
         val msgId = messages.addChatMessage(
             content = if (type == MessageType.TEXT) message else "",
@@ -111,10 +113,10 @@ object SendMessageHandler : PacketHandler
     }
 }
 
-object GetChatDetailsHandler : PacketHandler
+object GetChatDetailsHandler: PacketHandler
 {
     override val packetName = "get_chat_details"
-    
+
     override suspend fun handle(
         session: DefaultWebSocketServerSession,
         packetData: String,
@@ -122,10 +124,10 @@ object GetChatDetailsHandler : PacketHandler
     )
     {
         val chatId = runCatching()
-        {
-            val json = contentNegotiationJson.parseToJsonElement(packetData)
-            json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
-        }.getOrNull() ?: return
+                     {
+                         val json = contentNegotiationJson.parseToJsonElement(packetData)
+                         json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
+                     }.getOrNull() ?: return
 
         val chats = getKoin().get<Chats>()
         val chat = chats.getChat(chatId) ?: return
@@ -135,10 +137,10 @@ object GetChatDetailsHandler : PacketHandler
     }
 }
 
-object RenameChatHandler : PacketHandler
+object RenameChatHandler: PacketHandler
 {
     override val packetName = "rename_chat"
-    
+
     override suspend fun handle(
         session: DefaultWebSocketServerSession,
         packetData: String,
@@ -162,5 +164,30 @@ object RenameChatHandler : PacketHandler
 
         chats.renameChat(chatId, newName)
         session.sendInfo("Chat renamed successfully")
+    }
+}
+
+object SetDoNotDisturb: PacketHandler
+{
+    override val packetName: String = "set_do_not_disturb"
+
+    override suspend fun handle(
+        session: DefaultWebSocketServerSession,
+        packetData: String,
+        loginUser: User
+    )
+    {
+        val (chatId, doNotDisturb) = runCatching {
+            val json = contentNegotiationJson.parseToJsonElement(packetData)
+            val id = json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
+            val dnd = json.jsonObject["doNotDisturb"]!!.jsonPrimitive.boolean
+            id to dnd
+        }.getOrNull() ?: return
+
+        val chatMembers = getKoin().get<ChatMembers>()
+        if (!chatMembers.setDoNotDisturb(chatId, loginUser.id, doNotDisturb))
+            return session.sendError("You are not a member of this chat")
+        session.sendInfo("Do Not Disturb set to $doNotDisturb")
+        session.sendChatList(loginUser.id)
     }
 }

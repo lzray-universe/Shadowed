@@ -28,6 +28,7 @@ class ChatMembers: SqlDao<ChatMembers.ChatMemberTable>(ChatMemberTable)
         ).index()
         val key = text("key")
         val unread = integer("unread").default(0)
+        val doNotDisturb = bool("do_not_disturb").default(false)
         override val primaryKey: PrimaryKey = PrimaryKey(chat, user)
 
         init
@@ -89,7 +90,8 @@ class ChatMembers: SqlDao<ChatMembers.ChatMemberTable>(ChatMemberTable)
                 parsedOtherNames = parsedOtherNames,
                 parsedOtherIds = parsedOtherIds,
                 isPrivate = isPrivate,
-                unreadCount = row[table.unread]
+                unreadCount = row[table.unread],
+                doNotDisturb = row[table.doNotDisturb]
             )
         }
         val chatTable =  get<Chats>().table
@@ -144,5 +146,13 @@ class ChatMembers: SqlDao<ChatMembers.ChatMemberTable>(ChatMemberTable)
             .where { (table.chat eq chatId) and (table.user eq userId) }
             .map { it[unread] }
             .firstOrNull() ?: 0
+    }
+
+    suspend fun setDoNotDisturb(chatId: ChatId, userId: UserId, dnd: Boolean) = query()
+    {
+        table.update({ (table.chat eq chatId) and (table.user eq userId) })
+        {
+            it[doNotDisturb] = dnd
+        } > 0
     }
 }

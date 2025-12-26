@@ -157,8 +157,10 @@ object KickMemberFromChatHandler : PacketHandler
         val chats = getKoin().get<Chats>()
         val chatMembers = getKoin().get<ChatMembers>()
         val chat = chats.getChat(chatId) ?: return session.sendError("Chat not found")
-        
-        if (chat.private)
+
+        val isOwner = chats.isChatOwner(chatId, loginUser.id)
+
+        if (chat.private || (isOwner && loginUser.username == username))
         {
             val members = chatMembers.getChatMembersDetailed(chatId)
             if (members.none { it.id == loginUser.id })
@@ -169,17 +171,13 @@ object KickMemberFromChatHandler : PacketHandler
                 SessionManager.forEachSession(user.id)
                 { s -> s.sendChatList(user.id) }
             }
-            return session.sendInfo("Private chat deleted successfully")
+            return session.sendInfo("Chat deleted successfully")
         }
-        
-        val isOwner = chats.isChatOwner(chatId, loginUser.id)
+
         if (!isOwner && loginUser.username != username)
             return session.sendError("Only owner can kick members")
-        if (isOwner && loginUser.username == username)
-            return session.sendError("As owner, you cannot kick yourself")
         
-        val targetUser = getKoin().get<Users>().getUserByUsername(username) 
-            ?: return session.sendError("User not found: $username")
+        val targetUser = getKoin().get<Users>().getUserByUsername(username) ?: return session.sendError("User not found: $username")
         
         val members = chatMembers.getChatMembersDetailed(chatId).filterNot { it.id == targetUser.id }
         if (members.size <= 2)
