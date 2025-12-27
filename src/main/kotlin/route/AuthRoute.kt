@@ -42,6 +42,16 @@ fun Route.authRoute()
             )
             return@post
         }
+        if (registerRequest.publicKey.length > 500 || registerRequest.privateKey.length > 2500)
+        {
+            call.respond(
+                buildJsonObject {
+                    put("success", false)
+                    put("message", "Key length exceeds limit")
+                }
+            )
+            return@post
+        }
         if (users.getUserByUsername(registerRequest.username) == null)
         {
             val id = users.createUser(

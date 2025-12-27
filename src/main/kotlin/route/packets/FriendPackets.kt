@@ -4,6 +4,7 @@ import io.ktor.server.websocket.*
 import io.ktor.websocket.*
 import kotlinx.serialization.json.*
 import moe.tachyon.shadowed.contentNegotiationJson
+import moe.tachyon.shadowed.dataClass.ChatId
 import moe.tachyon.shadowed.database.*
 import moe.tachyon.shadowed.dataClass.User
 import moe.tachyon.shadowed.route.*
@@ -74,7 +75,7 @@ object AddFriendHandler : PacketHandler
                 chat.parsedOtherNames.contains(targetUser.username) 
             }
         
-        val chatId: moe.tachyon.shadowed.dataClass.ChatId
+        val chatId: ChatId
         val isExisting: Boolean
         
         if (existingMembership != null)
@@ -84,8 +85,7 @@ object AddFriendHandler : PacketHandler
         }
         else
         {
-            chatId = friends.addFriend(loginUser.id, targetUser.id) 
-                ?: return session.sendError("Chat creation failed")
+            chatId = friends.addFriend(loginUser.id, targetUser.id) ?: return session.sendError("Chat creation failed")
             isExisting = false
             chatMembers.addMember(chatId, loginUser.id, keyForSelf)
             chatMembers.addMember(chatId, targetUser.id, keyForFriend)

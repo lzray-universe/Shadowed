@@ -5,6 +5,7 @@ import moe.tachyon.shadowed.dataClass.ChatId
 import moe.tachyon.shadowed.dataClass.Message
 import moe.tachyon.shadowed.dataClass.MessageType
 import moe.tachyon.shadowed.dataClass.UserId
+import moe.tachyon.shadowed.database.utils.singleOrNull
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.ReferenceOption
 import org.jetbrains.exposed.sql.SortOrder
@@ -91,7 +92,8 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
         (table innerJoin usersTable)
             .selectAll()
             .where { table.id eq messageId }
-            .map {
+            .singleOrNull()
+            ?.let {
                 Message(
                     id = it[table.id].value,
                     content = it[table.content],
@@ -103,6 +105,5 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                     isRead = it[table.isRead],
                 )
             }
-            .firstOrNull()
     }
 }

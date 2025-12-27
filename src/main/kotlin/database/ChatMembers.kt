@@ -4,6 +4,7 @@ import moe.tachyon.shadowed.dataClass.ChatId
 import moe.tachyon.shadowed.dataClass.ChatMember
 import moe.tachyon.shadowed.dataClass.User
 import moe.tachyon.shadowed.dataClass.UserId
+import moe.tachyon.shadowed.database.utils.singleOrNull
 import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq

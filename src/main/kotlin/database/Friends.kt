@@ -2,6 +2,7 @@ package moe.tachyon.shadowed.database
 
 import moe.tachyon.shadowed.dataClass.ChatId
 import moe.tachyon.shadowed.dataClass.UserId
+import moe.tachyon.shadowed.database.utils.singleOrNull
 import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.sql.*
 import org.koin.core.component.get
