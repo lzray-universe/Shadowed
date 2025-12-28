@@ -11,4 +11,5 @@ data class User(
     val password: String,
     val publicKey: String,
     val privateKey: String,
+    val signature: String = "",
 )

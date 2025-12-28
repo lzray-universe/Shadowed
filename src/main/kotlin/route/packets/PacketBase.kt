@@ -17,7 +17,6 @@ data class NotifyPacket(
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val packet = "notify"
-    
     @Serializable
     enum class Type
     {
@@ -27,30 +26,26 @@ data class NotifyPacket(
     }
 }
 
-suspend fun DefaultWebSocketServerSession.sendNotify(type: NotifyPacket.Type, message: String)
-{
+suspend fun DefaultWebSocketServerSession.sendNotify(type: NotifyPacket.Type, message: String): Unit =
     send(contentNegotiationJson.encodeToString(NotifyPacket(type, message)))
-}
-
-suspend fun DefaultWebSocketServerSession.sendError(message: String) = sendNotify(NotifyPacket.Type.ERROR, message)
-suspend fun DefaultWebSocketServerSession.sendInfo(message: String) = sendNotify(NotifyPacket.Type.INFO, message)
-suspend fun DefaultWebSocketServerSession.sendWarning(message: String) = sendNotify(NotifyPacket.Type.WARNING, message)
-
+suspend fun DefaultWebSocketServerSession.sendError(message: String) =
+    sendNotify(NotifyPacket.Type.ERROR, message)
+suspend fun DefaultWebSocketServerSession.sendInfo(message: String) =
+    sendNotify(NotifyPacket.Type.INFO, message)
+suspend fun DefaultWebSocketServerSession.sendWarning(message: String) =
+    sendNotify(NotifyPacket.Type.WARNING, message)
 interface PacketHandler
 {
     val packetName: String
-    
     suspend fun handle(
         session: DefaultWebSocketServerSession,
         packetData: String,
         loginUser: User
     )
 }
-
 interface LoginPacketHandler
 {
     val packetName: String get() = "login"
-    
     suspend fun handle(
         session: DefaultWebSocketServerSession,
         packetData: String

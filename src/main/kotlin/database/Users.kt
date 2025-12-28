@@ -24,6 +24,7 @@ class Users: SqlDao<Users.UserTable>(UserTable)
         val password = text("encrypted_key")
         val publicKey = text("public_key")
         val privateKey = text("private_key")
+        val signature = text("signature").default("")
     }
 
     private fun deserialize(row: ResultRow): User = User(
@@ -32,6 +33,7 @@ class Users: SqlDao<Users.UserTable>(UserTable)
         password = row[table.password],
         publicKey = row[table.publicKey],
         privateKey = row[table.privateKey],
+        signature = row[table.signature],
     )
 
     suspend fun createUser(
@@ -70,6 +72,14 @@ class Users: SqlDao<Users.UserTable>(UserTable)
         {
             it[password] = newEncryptedPassword
             it[privateKey] = newEncryptedPrivateKey
+        }
+    }
+
+    suspend fun updateSignature(userId: UserId, newSignature: String) = query()
+    {
+        update({ table.id eq userId })
+        {
+            it[signature] = newSignature
         }
     }
 }

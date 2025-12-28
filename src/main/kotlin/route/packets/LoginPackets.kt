@@ -29,7 +29,8 @@ object LoginHandler : LoginPacketHandler
             return null
         }
         
-        val user = getKoin().get<Users>().getUserByUsername(username) ?: run {
+        val user = getKoin().get<Users>().getUserByUsername(username) ?: run()
+        {
             session.sendError("Login failed: User not found")
             return null
         }
@@ -80,9 +81,40 @@ object GetPublicKeyByUsernameHandler : PacketHandler
             }
             session.send(contentNegotiationJson.encodeToString(response))
         }
-        else
+        else session.sendError("Failed to get public key: User not found")
+    }
+}
+
+object UpdateSignatureHandler : PacketHandler
+{
+    override val packetName = "update_signature"
+    
+    override suspend fun handle(
+        session: DefaultWebSocketServerSession,
+        packetData: String,
+        loginUser: User
+    )
+    {
+        val signature = runCatching()
         {
-            session.sendError("Failed to get public key: User not found")
+            val json = contentNegotiationJson.parseToJsonElement(packetData)
+            json.jsonObject["signature"]!!.jsonPrimitive.content
+        }.getOrNull() ?: return session.sendError("Invalid signature format")
+
+        // Limit signature length
+        if (signature.length > 100)
+        {
+            return session.sendError("Signature too long (max 100 characters)")
         }
+
+        getKoin().get<Users>().updateSignature(loginUser.id, signature)
+        
+        val response = buildJsonObject()
+        {
+            put("packet", "signature_updated")
+            put("signature", signature)
+        }
+        session.send(contentNegotiationJson.encodeToString(response))
+        session.sendInfo("Signature updated successfully")
     }
 }

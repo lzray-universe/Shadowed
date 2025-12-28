@@ -102,21 +102,14 @@ object AddMemberToChatHandler : PacketHandler
         val chatMembers = getKoin().get<ChatMembers>()
         val isMember = chatMembers.getUserChats(loginUser.id).any { it.chatId == chatId }
         
-        if (!isMember)
-        {
-            return session.sendError("You are not a member of this chat")
-        }
+        if (!isMember) return session.sendError("You are not a member of this chat")
 
         // Get target user
-        val targetUser = getKoin().get<Users>().getUserByUsername(username) 
-            ?: return session.sendError("User not found: $username")
+        val targetUser = getKoin().get<Users>().getUserByUsername(username) ?: return session.sendError("User not found: $username")
 
         // Check if user is already a member
         val alreadyMember = chatMembers.getUserChats(targetUser.id).any { it.chatId == chatId }
-        if (alreadyMember)
-        {
-            return session.sendError("$username is already a member")
-        }
+        if (alreadyMember) return session.sendError("$username is already a member")
 
         // Add the new member
         chatMembers.addMember(chatId, targetUser.id, encryptedKey)
@@ -127,12 +120,8 @@ object AddMemberToChatHandler : PacketHandler
         val chat = getKoin().get<Chats>().getChat(chatId)!!
         
         for (user in members)
-        {
-            SessionManager.forEachSession(user.id)
-            { s -> s.sendChatDetails(chat, members) }
-        }
-        SessionManager.forEachSession(targetUser.id)
-        { s -> s.sendChatList(targetUser.id) }
+            SessionManager.forEachSession(user.id) { s -> s.sendChatDetails(chat, members) }
+        SessionManager.forEachSession(targetUser.id) { s -> s.sendChatList(targetUser.id) }
     }
 }
 
@@ -188,10 +177,8 @@ object KickMemberFromChatHandler : PacketHandler
         
         for (user in members)
         {
-            SessionManager.forEachSession(user.id)
-            { s -> s.sendChatDetails(chat, members) }
+            SessionManager.forEachSession(user.id) { s -> s.sendChatDetails(chat, members) }
         }
-        SessionManager.forEachSession(targetUser.id)
-        { s -> s.sendChatList(targetUser.id) }
+        SessionManager.forEachSession(targetUser.id) { s -> s.sendChatList(targetUser.id) }
     }
 }

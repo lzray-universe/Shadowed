@@ -79,10 +79,9 @@ object SendMessageHandler: PacketHandler
             val type: MessageType,
         )
         val (chatId, message, type) = runCatching()
-                                      {
-                                          contentNegotiationJson.decodeFromString<SendMessage>(packetData)
-                                      }.getOrNull()
-                                      ?: return session.sendError("Send message failed: Invalid packet format")
+        {
+            contentNegotiationJson.decodeFromString<SendMessage>(packetData)
+        }.getOrNull() ?: return session.sendError("Send message failed: Invalid packet format")
 
         if (getKoin().get<ChatMembers>().getUserChats(loginUser.id).none { it.chatId == chatId })
             return session.sendError("Send message failed: You are not a member of this chat")
@@ -123,10 +122,10 @@ object GetChatDetailsHandler: PacketHandler
     )
     {
         val chatId = runCatching()
-                     {
-                         val json = contentNegotiationJson.parseToJsonElement(packetData)
-                         json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
-                     }.getOrNull() ?: return
+        {
+            val json = contentNegotiationJson.parseToJsonElement(packetData)
+            json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
+        }.getOrNull() ?: return
 
         val chats = getKoin().get<Chats>()
         val chat = chats.getChat(chatId) ?: return
@@ -146,7 +145,8 @@ object RenameChatHandler: PacketHandler
         loginUser: User
     )
     {
-        val (chatId, newName) = runCatching {
+        val (chatId, newName) = runCatching()
+        {
             val json = contentNegotiationJson.parseToJsonElement(packetData)
             val id = json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
             val name = json.jsonObject["newName"]!!.jsonPrimitive.content
@@ -176,7 +176,8 @@ object SetDoNotDisturb: PacketHandler
         loginUser: User
     )
     {
-        val (chatId, doNotDisturb) = runCatching {
+        val (chatId, doNotDisturb) = runCatching()
+        {
             val json = contentNegotiationJson.parseToJsonElement(packetData)
             val id = json.jsonObject["chatId"]!!.jsonPrimitive.int.let(::ChatId)
             val dnd = json.jsonObject["doNotDisturb"]!!.jsonPrimitive.boolean

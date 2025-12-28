@@ -32,6 +32,7 @@ private val packetHandlers: Map<String, PacketHandler> = listOf(
     GetBroadcastsHandler,
     // Login packets (except login itself)
     GetPublicKeyByUsernameHandler,
+    UpdateSignatureHandler,
 ).associateBy { it.packetName.lowercase() }
 
 fun Route.webSocketRoute() = webSocket("/socket") socket@

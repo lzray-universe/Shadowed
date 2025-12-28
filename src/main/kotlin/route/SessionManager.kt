@@ -4,6 +4,8 @@ import io.ktor.server.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -97,7 +99,18 @@ suspend fun WebSocketSession.sendChatDetails(chat: Chat, members: List<User>)
             put("name", chat.name)
             put("ownerId", chat.owner.value)
             put("isPrivate", chat.private)
-            put("members", contentNegotiationJson.encodeToJsonElement(members))
+            put("members", buildJsonArray()
+            {
+                members.forEach { member ->
+                    addJsonObject()
+                    {
+                        put("id", member.id.value)
+                        put("username", member.username)
+                        // Only include signature for private chats
+                        if (chat.private) put("signature", member.signature)
+                    }
+                }
+            })
         })
     }
     return send(contentNegotiationJson.encodeToString(response))

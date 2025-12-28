@@ -119,8 +119,9 @@ class ChatMembers: SqlDao<ChatMembers.ChatMemberTable>(ChatMemberTable)
                     id = row[uTable.id].value,
                     username = row[uTable.username],
                     password = "",
-                    publicKey = row[uTable.publicKey],
-                    privateKey = row[uTable.privateKey]
+                    publicKey = "",
+                    privateKey = "",
+                    signature = row[uTable.signature]
                 )
             }
     }
