@@ -2,15 +2,14 @@ package moe.tachyon.shadowed.dataClass
 
 import kotlinx.serialization.Serializable
 
+/**
+ * Information about a message that is being replied to
+ */
 @Serializable
-data class Message(
-    val id: Long,
+data class ReplyInfo(
+    val messageId: Long,
     val content: String,
-    val type: MessageType,
-    val chatId: ChatId,
     val senderId: UserId,
     val senderName: String,
-    val time: Long,
-    val isRead: Boolean,
-    val replyTo: ReplyInfo? = null
+    val type: MessageType
 )

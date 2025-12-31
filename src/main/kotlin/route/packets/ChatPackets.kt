@@ -2,12 +2,15 @@ package moe.tachyon.shadowed.route.packets
 
 import io.ktor.server.websocket.*
 import io.ktor.websocket.*
-import kotlinx.datetime.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import moe.tachyon.shadowed.contentNegotiationJson
-import moe.tachyon.shadowed.database.*
-import moe.tachyon.shadowed.dataClass.*
+import moe.tachyon.shadowed.dataClass.ChatId
+import moe.tachyon.shadowed.dataClass.MessageType
+import moe.tachyon.shadowed.dataClass.User
+import moe.tachyon.shadowed.database.ChatMembers
+import moe.tachyon.shadowed.database.Chats
+import moe.tachyon.shadowed.database.Messages
 import moe.tachyon.shadowed.route.*
 
 object GetChatsHandler: PacketHandler
@@ -77,8 +80,9 @@ object SendMessageHandler: PacketHandler
             val chatId: ChatId,
             val message: String,
             val type: MessageType,
+            val replyTo: Long? = null,
         )
-        val (chatId, message, type) = runCatching()
+        val (chatId, message, type, replyTo) = runCatching()
         {
             contentNegotiationJson.decodeFromString<SendMessage>(packetData)
         }.getOrNull() ?: return session.sendError("Send message failed: Invalid packet format")
@@ -107,27 +111,41 @@ object SendMessageHandler: PacketHandler
             return session.sendError("Send message failed: You are not a member of this chat")
 
         val messages = getKoin().get<Messages>()
-        val msgId = messages.addChatMessage(
-            content = if (type == MessageType.TEXT) message else "",
-            type = type,
-            chatId = chatId,
-            senderId = loginUser.id
-        )
-        chats.updateTime(chatId)
-        chatMembers.incrementUnread(chatId, loginUser.id)
-        chatMembers.resetUnread(chatId, loginUser.id)
-        distributeMessage(
-            Message(
-                id = msgId,
-                content = message,
+        val msgId = if (replyTo != null)
+        {
+            // Verify the replied message exists and is in the same chat
+            val repliedMessage = messages.getMessage(replyTo)
+            if (repliedMessage == null || repliedMessage.chatId != chatId)
+            {
+                return session.sendError("Send message failed: Replied message not found or not in this chat")
+            }
+            messages.addReplyMessage(
+                content = if (type == MessageType.TEXT) message else "",
                 type = type,
                 chatId = chatId,
                 senderId = loginUser.id,
-                senderName = loginUser.username,
-                time = Clock.System.now().toEpochMilliseconds(),
-                isRead = false,
+                replyToMessageId = replyTo
             )
-        )
+        }
+        else
+        {
+            messages.addChatMessage(
+                content = if (type == MessageType.TEXT) message else "",
+                type = type,
+                chatId = chatId,
+                senderId = loginUser.id
+            )
+        }
+
+        // Get the full message including reply info if applicable
+        val fullMessage = messages.getMessage(msgId) ?: run {
+            return session.sendError("Send message failed: Failed to retrieve sent message")
+        }
+
+        chats.updateTime(chatId)
+        chatMembers.incrementUnread(chatId, loginUser.id)
+        chatMembers.resetUnread(chatId, loginUser.id)
+        distributeMessage(fullMessage)
     }
 }
 

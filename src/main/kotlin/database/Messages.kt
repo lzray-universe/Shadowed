@@ -5,6 +5,7 @@ import kotlinx.datetime.Instant
 import moe.tachyon.shadowed.dataClass.ChatId
 import moe.tachyon.shadowed.dataClass.Message
 import moe.tachyon.shadowed.dataClass.MessageType
+import moe.tachyon.shadowed.dataClass.ReplyInfo
 import moe.tachyon.shadowed.dataClass.UserId
 import moe.tachyon.shadowed.database.utils.singleOrNull
 import org.jetbrains.exposed.dao.id.LongIdTable
@@ -18,9 +19,10 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
     {
         val content = text("content")
         val type = enumerationByName<MessageType>("type", 20).default(MessageType.TEXT)
-        val time = timestamp("time")
+        val time = timestamp("time").index()
         val chat = reference("chat", Chats.ChatTable, onDelete = ReferenceOption.CASCADE, onUpdate = ReferenceOption.CASCADE).index()
         val sender = reference("sender", Users.UserTable, onDelete = ReferenceOption.CASCADE, onUpdate = ReferenceOption.CASCADE).index()
+        val replyTo = reference("reply_to", MessageTable, onDelete = ReferenceOption.SET_NULL, onUpdate = ReferenceOption.CASCADE).nullable().index()
         val isRead = bool("is_read").default(false)
     }
 
@@ -38,6 +40,31 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
             it[table.chat] = chatId
             it[table.sender] = senderId
             it[table.isRead] = false
+            it[table.replyTo] = null
+            it[table.time] = Clock.System.now()
+        }.value
+    }
+
+    /**
+     * Add a message that replies to another message
+     * @return The ID of the newly created message
+     */
+    suspend fun addReplyMessage(
+        content: String,
+        type: MessageType,
+        chatId: ChatId,
+        senderId: UserId,
+        replyToMessageId: Long
+    ): Long = query()
+    {
+        table.insertAndGetId()
+        {
+            it[table.content] = content
+            it[table.type] = type
+            it[table.chat] = chatId
+            it[table.sender] = senderId
+            it[table.isRead] = false
+            it[table.replyTo] = replyToMessageId
             it[table.time] = Clock.System.now()
         }.value
     }
@@ -49,13 +76,29 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
     ): List<Message> = query()
     {
         val usersTable = getKoin().get<Users>().table
-        (table innerJoin usersTable)
+        val replyTable = table.alias("reply_table")
+        val replyUsersTable = Users.UserTable.alias("reply_users_table")
+
+        table
+            .innerJoin(usersTable, { this@Messages.table.sender }, { usersTable.id })
+            .leftJoin(replyTable, { this@Messages.table.replyTo }, { replyTable[this@Messages.table.id] })
+            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[Users.UserTable.id] })
             .selectAll()
             .where { table.chat eq chatId }
             .orderBy(table.time to SortOrder.DESC)
             .limit(count)
             .offset(start = begin)
             .map {
+                val replyInfo = it.getOrNull(replyTable[MessageTable.id])?.let { replyId ->
+                    ReplyInfo(
+                        messageId = replyId.value,
+                        content = it[replyTable[MessageTable.content]],
+                        senderId = it[replyTable[MessageTable.sender]].value,
+                        senderName = it[replyUsersTable[Users.UserTable.username]],
+                        type = it[replyTable[MessageTable.type]]
+                    )
+                }
+
                 Message(
                     id = it[table.id].value,
                     content = it[table.content],
@@ -65,6 +108,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                     senderName = it[usersTable.username],
                     time = it[table.time].toEpochMilliseconds(),
                     isRead = it[table.isRead],
+                    replyTo = replyInfo
                 )
             }
             .reversed()
@@ -85,11 +129,27 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
     suspend fun getMessage(messageId: Long): Message? = query()
     {
         val usersTable = getKoin().get<Users>().table
-        (table innerJoin usersTable)
+        val replyTable = table.alias("reply_table")
+        val replyUsersTable = Users.UserTable.alias("reply_users_table")
+
+        table
+            .innerJoin(usersTable, { this@Messages.table.sender }, { usersTable.id })
+            .leftJoin(replyTable, { this@Messages.table.replyTo }, { replyTable[this@Messages.table.id] })
+            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[Users.UserTable.id] })
             .selectAll()
             .where { table.id eq messageId }
             .singleOrNull()
             ?.let {
+                val replyInfo = it.getOrNull(replyTable[MessageTable.id])?.let { replyId ->
+                    ReplyInfo(
+                        messageId = replyId.value,
+                        content = it[replyTable[MessageTable.content]],
+                        senderId = it[replyTable[MessageTable.sender]].value,
+                        senderName = it[replyUsersTable[Users.UserTable.username]],
+                        type = it[replyTable[MessageTable.type]]
+                    )
+                }
+
                 Message(
                     id = it[table.id].value,
                     content = it[table.content],
@@ -99,6 +159,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                     senderName = it[usersTable.username],
                     time = it[table.time].toEpochMilliseconds(),
                     isRead = it[table.isRead],
+                    replyTo = replyInfo
                 )
             }
     }
