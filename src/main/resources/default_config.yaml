@@ -6,6 +6,22 @@ ktor:
 # 允许使用通配符例如*.tachyon.moe
 serverHost:
   - '*.tachyon.moe'
+
+# 项目信息
+project:
+  name: 'ShadowedChat'
+  website: 'https://github.com/yourusername/ShadowedChat'
+
+# 开发者信息
+developer:
+  name: 'Your Name'
+  website: 'https://yourwebsite.com'
+  github: 'https://github.com/yourusername'
+
+# 打赏二维码（填写二维码图片的URL或相对路径）
+donation:
+  wechatQrCode: null
+  alipayQrCode: null
 database:
   # 数据库实现, 可选值: sql
   impl: sql

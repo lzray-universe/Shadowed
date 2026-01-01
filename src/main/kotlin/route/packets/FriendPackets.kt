@@ -19,7 +19,22 @@ object GetFriendsHandler : PacketHandler
         loginUser: User
     )
     {
-        val friendsList = getKoin().get<Friends>().getFriends(loginUser.id)
+        val friends = getKoin().get<Friends>()
+        val chats = getKoin().get<Chats>()
+        val chatMembers = getKoin().get<ChatMembers>()
+        
+        val friendsList = friends.getFriends(loginUser.id)
+
+        // Get the user's moment chat to check viewer permissions
+        val myMomentChat = chats.getMomentChatByOwner(loginUser.id)
+        val momentViewerIds = if (myMomentChat != null)
+        {
+            chatMembers.getMemberIds(myMomentChat.id)
+        }
+        else
+        {
+            emptyList()
+        }
 
         val response = buildJsonObject()
         {
@@ -32,6 +47,7 @@ object GetFriendsHandler : PacketHandler
                     {
                         put("id", id.value)
                         put("username", name)
+                        put("canViewMoments", momentViewerIds.contains(id))
                     }
                 }
             })

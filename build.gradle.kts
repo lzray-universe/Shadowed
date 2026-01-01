@@ -104,3 +104,12 @@ ktor {
         archiveFileName = "Shadowed.jar"
     }
 }
+
+tasks.withType<ProcessResources> {
+    filesMatching("**/application.yaml") {
+        expand(mapOf("version" to version)) {
+            // 设置不转义反斜杠
+            escapeBackslash = true
+        }
+    }
+}
