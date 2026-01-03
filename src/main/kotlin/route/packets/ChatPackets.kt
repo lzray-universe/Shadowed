@@ -149,7 +149,7 @@ object SendMessageHandler: PacketHandler
         chats.updateTime(chatId)
         chatMembers.incrementUnread(chatId, loginUser.id)
         chatMembers.resetUnread(chatId, loginUser.id)
-        distributeMessage(fullMessage)
+        distributeMessage(fullMessage, silent = false)
     }
 }
 
@@ -285,7 +285,7 @@ object EditMessageHandler: PacketHandler
         distributeMessage(originalMessage.copy(
             content = newContent ?: "",
             type = if (newContent == null) MessageType.TEXT else originalMessage.type,
-        ))
+        ), silent = true)
     }
 }
 object SetBurnTimeHandler: PacketHandler
@@ -372,7 +372,74 @@ object MarkMessageReadHandler: PacketHandler
         val updatedMessage = messages.getMessage(messageId)
         if (updatedMessage != null)
         {
-            distributeMessage(updatedMessage)
+            distributeMessage(updatedMessage, silent = true)
+        }
+    }
+}
+
+object ToggleReactionHandler: PacketHandler
+{
+    override val packetName = "toggle_reaction"
+
+    override suspend fun handle(
+        session: DefaultWebSocketServerSession,
+        packetData: String,
+        loginUser: User
+    )
+    {
+        val (messageId, emoji) = runCatching()
+        {
+            val json = contentNegotiationJson.parseToJsonElement(packetData)
+            val id = json.jsonObject["messageId"]!!.jsonPrimitive.long
+            val emoji = json.jsonObject["emoji"]!!.jsonPrimitive.content
+            id to emoji
+        }.getOrNull() ?: return session.sendError("Toggle reaction failed: Invalid packet format")
+
+        val messages = getKoin().get<Messages>()
+        val chatMembers = getKoin().get<ChatMembers>()
+        val chats = getKoin().get<Chats>()
+
+        // Get the message
+        val message = messages.getMessage(messageId)
+            ?: return session.sendError("Toggle reaction failed: Message not found")
+
+        // Get the chat to check if it's a moment
+        val chat = chats.getChat(message.chatId)
+            ?: return session.sendError("Toggle reaction failed: Chat not found")
+
+        // Check if user is a member of this chat
+        if (!chatMembers.isMember(message.chatId, loginUser.id))
+            return session.sendError("Toggle reaction failed: You are not a member of this chat")
+
+        // Toggle the reaction
+        messages.toggleReaction(messageId, loginUser.id, emoji)
+
+        // Fetch the updated message
+        val updatedMessage = messages.getMessage(messageId)
+        if (updatedMessage != null)
+        {
+            // If this is a moment chat, send moment_edited to all viewers
+            // Otherwise, use the regular message distribution
+            if (chat.isMoment)
+            {
+                // Get all viewers of this moment chat
+                val viewers = chatMembers.getMemberIds(chat.id)
+                viewers.forEach { uid ->
+                    SessionManager.forEachSession(uid) { s ->
+                        val response = buildJsonObject {
+                            put("packet", "moment_edited")
+                            put("messageId", messageId)
+                            put("content", updatedMessage.content)
+                            put("reactions", contentNegotiationJson.encodeToJsonElement(updatedMessage.reactions))
+                        }
+                        s.send(contentNegotiationJson.encodeToString(response))
+                    }
+                }
+            }
+            else
+            {
+                distributeMessage(updatedMessage, silent = true)
+            }
         }
     }
 }

@@ -41,9 +41,9 @@ fun Route.configRoute()
         val donationWechat = environment.config.propertyOrNull("donation.wechatQrCode")?.getString()
         val donationAlipay = environment.config.propertyOrNull("donation.alipayQrCode")?.getString()
 
-        // Get all donors
+        // Get all donors directly from database
         val users = getKoin().get<moe.tachyon.shadowed.database.Users>()
-        val donors = users.getAllDonors()
+        val donorsWithAmount = users.getDonors()
 
         call.respond(
             buildJsonObject()
@@ -64,12 +64,13 @@ fun Route.configRoute()
                 })
                 put("donors", buildJsonArray()
                 {
-                    donors.forEach { donor ->
+                    donorsWithAmount.forEach { (donor, amount) ->
                         addJsonObject()
                         {
                             put("id", donor.id.value)
                             put("username", donor.username)
                             put("isDonor", donor.isDonor)
+                            put("donationAmount", amount)
                         }
                     }
                 })

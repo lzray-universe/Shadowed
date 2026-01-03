@@ -8,6 +8,7 @@ import moe.tachyon.shadowed.contentNegotiationJson
 import moe.tachyon.shadowed.dataClass.MessageType
 import moe.tachyon.shadowed.dataClass.User
 import moe.tachyon.shadowed.dataClass.UserId
+import moe.tachyon.shadowed.dataClass.Reaction
 import moe.tachyon.shadowed.database.*
 import moe.tachyon.shadowed.route.getKoin
 import moe.tachyon.shadowed.utils.FileUtils
@@ -27,7 +28,8 @@ data class MomentItem(
     val ownerName: String,
     val time: Long,
     val key: String, // Encrypted key for decryption
-    val ownerIsDonor: Boolean = false
+    val ownerIsDonor: Boolean = false,
+    val reactions: List<Reaction> = emptyList()
 )
 
 /**
@@ -66,7 +68,8 @@ object GetMomentsHandler : PacketHandler
                 ownerName = msg.ownerName,
                 time = msg.time,
                 key = msg.key,
-                ownerIsDonor = msg.ownerIsDonor
+                ownerIsDonor = msg.ownerIsDonor,
+                reactions = msg.reactions
             )
         }
 
@@ -202,7 +205,8 @@ object GetUserMomentsHandler : PacketHandler
                 ownerId = targetUserId.value,
                 ownerName = targetUser.username,
                 time = msg.time,
-                key = key ?: ""
+                key = key ?: "",
+                reactions = msg.reactions
             )
         }
 

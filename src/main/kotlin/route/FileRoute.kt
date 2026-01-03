@@ -112,7 +112,8 @@ fun Route.fileRoute()
                 time = Clock.System.now().toEpochMilliseconds(),
                 readAt = null,
                 senderIsDonor = userAuth.isDonor
-            )
+            ),
+            silent = false
         )
     }
 
@@ -308,12 +309,13 @@ fun Route.fileRoute()
                 id = messageId,
                 content = taskInfo.metadata,
                 type = taskInfo.messageType,
-                chatId = chatId,
+                chatId = ChatId(taskInfo.chatId),
                 senderId = userAuth.id,
                 senderName = userAuth.username,
                 time = Clock.System.now().toEpochMilliseconds(),
                 readAt = null,
-            )
+            ),
+            silent = false
         )
     }
 
@@ -352,7 +354,7 @@ fun Route.fileRoute()
     }
 }
 
-internal suspend fun distributeMessage(message: Message)
+internal suspend fun distributeMessage(message: Message, silent: Boolean)
 {
     val members = getKoin().get<ChatMembers>().getMemberIds(message.chatId)
     members.forEach()
@@ -364,6 +366,7 @@ internal suspend fun distributeMessage(message: Message)
             {
                 put("packet", "receive_message")
                 put("message", contentNegotiationJson.encodeToJsonElement(message))
+                put("silent", silent)
             }
             logger.warning("sending message to $uid")
             {

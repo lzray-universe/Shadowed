@@ -2,24 +2,32 @@ package moe.tachyon.shadowed.database
 
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.serialization.builtins.ListSerializer
 import moe.tachyon.shadowed.dataClass.ChatId
 import moe.tachyon.shadowed.dataClass.Message
 import moe.tachyon.shadowed.dataClass.MessageType
+import moe.tachyon.shadowed.dataClass.Reaction
 import moe.tachyon.shadowed.dataClass.ReplyInfo
 import moe.tachyon.shadowed.dataClass.UserId
 import moe.tachyon.shadowed.database.utils.CustomExpression
 import moe.tachyon.shadowed.database.utils.CustomExpressionWithColumnType
 import moe.tachyon.shadowed.database.utils.singleOrNull
 import moe.tachyon.shadowed.logger.ShadowedLogger
+import moe.tachyon.shadowed.dataJson
 import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.kotlin.datetime.KotlinInstantColumnType
 import org.jetbrains.exposed.sql.kotlin.datetime.timestamp
 import org.jetbrains.exposed.sql.kotlin.datetime.timestampWithTimeZone
+import org.jetbrains.exposed.sql.json.jsonb
+import org.koin.core.component.inject
 
 class Messages: SqlDao<Messages.MessageTable>(MessageTable)
 {
+    private val users by inject<Users>()
+    private val chats by inject<Chats>()
+    private val chatMembers by inject<ChatMembers>()
     object MessageTable: LongIdTable("messages")
     {
         val content = text("content")
@@ -29,6 +37,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
         val sender = reference("sender", Users.UserTable, onDelete = ReferenceOption.CASCADE, onUpdate = ReferenceOption.CASCADE).index()
         val replyTo = reference("reply_to", MessageTable, onDelete = ReferenceOption.SET_NULL, onUpdate = ReferenceOption.CASCADE).nullable().index()
         val readAt = timestamp("read_at").nullable().index().default(null)
+        val reactions = jsonb("reactions", dataJson, ListSerializer(Reaction.serializer())).nullable().default(null)
     }
 
     suspend fun addChatMessage(
@@ -48,6 +57,86 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
             it[table.replyTo] = null
             it[table.time] = Clock.System.now()
         }.value
+    }
+
+    /**
+     * Toggle a user's reaction on a message
+     * If the user has already reacted with this emoji, remove it
+     * If the user has reacted with a different emoji, replace it
+     * If the user hasn't reacted with any emoji, add this one
+
+     */
+    suspend fun toggleReaction(
+        messageId: Long,
+        userId: UserId,
+        emoji: String
+    ): Unit = query()
+    {
+        // First, get current reactions
+        val currentReactions = table
+            .select(table.reactions)
+            .where { table.id eq messageId }
+            .singleOrNull()
+            ?.get(table.reactions) ?: emptyList()
+
+        // Find which emoji current user has reacted to, if any
+        val userCurrentReactionIndex = currentReactions.indexOfFirst { userId in it.userIds }
+        var newReactions = currentReactions.toMutableList()
+
+        // Check if user is toggling the same emoji they already have
+        val userHasThisEmoji = userCurrentReactionIndex >= 0 && currentReactions[userCurrentReactionIndex].emoji == emoji
+
+        if (userHasThisEmoji)
+        {
+            // User already reacted with this emoji, remove it
+            val reaction = newReactions[userCurrentReactionIndex]
+            newReactions[userCurrentReactionIndex] = reaction.copy(
+                userIds = reaction.userIds.filter { it != userId }
+            )
+            // Remove reaction if no users left
+            if (newReactions[userCurrentReactionIndex].userIds.isEmpty())
+            {
+                newReactions.removeAt(userCurrentReactionIndex)
+            }
+        }
+        else
+        {
+            // Check if user reacted with any other emoji
+            val userCurrentReactionIndex2 = newReactions.indexOfFirst { userId in it.userIds }
+            if (userCurrentReactionIndex2 >= 0)
+            {
+                // User reacted with different emoji, remove it first
+                val reaction = newReactions[userCurrentReactionIndex2]
+                newReactions[userCurrentReactionIndex2] = reaction.copy(
+                    userIds = reaction.userIds.filter { it != userId }
+                )
+                if (newReactions[userCurrentReactionIndex2].userIds.isEmpty())
+                {
+                    newReactions.removeAt(userCurrentReactionIndex2)
+                }
+            }
+
+            // Add or create the new reaction
+            val newReactionIndex = newReactions.indexOfFirst { it.emoji == emoji }
+            if (newReactionIndex >= 0)
+            {
+                val reaction = newReactions[newReactionIndex]
+                newReactions[newReactionIndex] = reaction.copy(
+                    userIds = reaction.userIds + userId
+                )
+            }
+            else
+            {
+                newReactions.add(Reaction(emoji = emoji, userIds = listOf(userId)))
+            }
+        }
+
+        // Update the message with new reactions
+        table.update({ table.id eq messageId })
+        {
+            it[table.reactions] = newReactions
+        }
+
     }
 
     /**
@@ -80,14 +169,14 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
         count: Int
     ): List<Message> = query()
     {
-        val usersTable = getKoin().get<Users>().table
+        val usersTable = users.table
         val replyTable = table.alias("reply_table")
-        val replyUsersTable = Users.UserTable.alias("reply_users_table")
+        val replyUsersTable = users.table.alias("reply_users_table")
 
         table
             .innerJoin(usersTable, { this@Messages.table.sender }, { usersTable.id })
             .leftJoin(replyTable, { this@Messages.table.replyTo }, { replyTable[this@Messages.table.id] })
-            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[Users.UserTable.id] })
+            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[users.table.id] })
             .selectAll()
             .where { table.chat eq chatId }
             .orderBy(table.time to SortOrder.DESC)
@@ -99,7 +188,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                         messageId = replyId.value,
                         content = it[replyTable[MessageTable.content]],
                         senderId = it[replyTable[MessageTable.sender]].value,
-                        senderName = it[replyUsersTable[Users.UserTable.username]],
+                        senderName = it[replyUsersTable[users.table.username]],
                         type = it[replyTable[MessageTable.type]]
                     )
                 }
@@ -114,7 +203,8 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                     time = it[table.time].toEpochMilliseconds(),
                     readAt = it[table.readAt]?.toEpochMilliseconds(),
                     replyTo = replyInfo,
-                    senderIsDonor = it[usersTable.isDonor]
+                    senderIsDonor = it[usersTable.donationAmount] > 0,
+                    reactions = it[table.reactions] ?: emptyList()
                 )
             }
             .reversed()
@@ -134,14 +224,14 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
 
     suspend fun getMessage(messageId: Long): Message? = query()
     {
-        val usersTable = getKoin().get<Users>().table
+        val usersTable = users.table
         val replyTable = table.alias("reply_table")
-        val replyUsersTable = Users.UserTable.alias("reply_users_table")
+        val replyUsersTable = users.table.alias("reply_users_table")
 
         table
             .innerJoin(usersTable, { this@Messages.table.sender }, { usersTable.id })
             .leftJoin(replyTable, { this@Messages.table.replyTo }, { replyTable[this@Messages.table.id] })
-            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[Users.UserTable.id] })
+            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[users.table.id] })
             .selectAll()
             .where { table.id eq messageId }
             .singleOrNull()
@@ -151,7 +241,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                         messageId = replyId.value,
                         content = it[replyTable[MessageTable.content]],
                         senderId = it[replyTable[MessageTable.sender]].value,
-                        senderName = it[replyUsersTable[Users.UserTable.username]],
+                        senderName = it[replyUsersTable[users.table.username]],
                         type = it[replyTable[MessageTable.type]]
                     )
                 }
@@ -166,7 +256,8 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                     time = it[table.time].toEpochMilliseconds(),
                     readAt = it[table.readAt]?.toEpochMilliseconds(),
                     replyTo = replyInfo,
-                    senderIsDonor = it[usersTable.isDonor]
+                    senderIsDonor = it[usersTable.donationAmount] > 0,
+                    reactions = it[table.reactions] ?: emptyList()
                 )
             }
     }
@@ -182,7 +273,8 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
         val ownerName: String,
         val time: Long,
         val key: String,
-        val ownerIsDonor: Boolean = false
+        val ownerIsDonor: Boolean = false,
+        val reactions: List<Reaction> = emptyList()
     )
 
     /**
@@ -196,9 +288,9 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
         count: Int
     ): List<MomentMessage> = query()
     {
-        val chatsTable = getKoin().get<Chats>().table
-        val chatMembersTable = getKoin().get<ChatMembers>().table
-        val usersTable = getKoin().get<Users>().table
+        val chatsTable = chats.table
+        val chatMembersTable = chatMembers.table
+        val usersTable = users.table
 
         chatMembersTable
             .innerJoin(chatsTable, { chatMembersTable.chat }, { chatsTable.id })
@@ -221,14 +313,15 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                     ownerName = it[usersTable.username],
                     time = it[table.time].toEpochMilliseconds(),
                     key = it[chatMembersTable.key],
-                    ownerIsDonor = it[usersTable.isDonor]
+                    ownerIsDonor = it[usersTable.donationAmount] > 0,
+                    reactions = it[table.reactions] ?: emptyList()
                 )
             }
     }
 
     suspend fun getTopActiveUsers(after: Instant): List<Pair<String, Long>> = query()
     {
-        val userTable = getKoin().get<Users>().table
+        val userTable = users.table
         userTable.join(table, JoinType.INNER, userTable.id, table.sender)
             .select(table.id.count(), userTable.username)
             .where { table.time greater after }
@@ -243,7 +336,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
 
     suspend fun getTopActiveChats(after: Instant): List<Pair<String, Long>> = query()
     {
-        val chatTable = getKoin().get<Chats>().table
+        val chatTable = chats.table
         chatTable.join(table, JoinType.INNER, chatTable.id, table.chat)
             .select(table.id.count(), chatTable.name)
             .where { (table.time greater after) and (chatTable.private eq false) }
@@ -288,7 +381,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
      */
     suspend fun getExpiredMessageIds(): List<ExpiredMessageInfo> = query()
     {
-        val chatTable = getKoin().get<Chats>().table
+        val chatTable = chats.table
         table
             .innerJoin(chatTable, { this@Messages.table.chat }, { chatTable.id })
             .select(table.id, table.chat)
@@ -337,14 +430,14 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
      */
     suspend fun getMomentComments(momentMessageId: Long): List<Message> = query()
     {
-        val usersTable = getKoin().get<Users>().table
+        val usersTable = users.table
         val replyTable = table.alias("reply_table")
-        val replyUsersTable = Users.UserTable.alias("reply_users_table")
+        val replyUsersTable = users.table.alias("reply_users_table")
 
         table
             .innerJoin(usersTable, { this@Messages.table.sender }, { usersTable.id })
             .leftJoin(replyTable, { this@Messages.table.replyTo }, { replyTable[this@Messages.table.id] })
-            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[Users.UserTable.id] })
+            .leftJoin(replyUsersTable, { replyTable[MessageTable.sender] }, { replyUsersTable[users.table.id] })
             .selectAll()
             .where { table.replyTo eq momentMessageId }
             .orderBy(table.time to SortOrder.ASC)
@@ -354,7 +447,7 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                         messageId = replyId.value,
                         content = it[replyTable[MessageTable.content]],
                         senderId = it[replyTable[MessageTable.sender]].value,
-                        senderName = it[replyUsersTable[Users.UserTable.username]],
+                        senderName = it[replyUsersTable[users.table.username]],
                         type = it[replyTable[MessageTable.type]]
                     )
                 }
@@ -369,7 +462,8 @@ class Messages: SqlDao<Messages.MessageTable>(MessageTable)
                     time = it[table.time].toEpochMilliseconds(),
                     readAt = it[table.readAt]?.toEpochMilliseconds(),
                     replyTo = replyInfo,
-                    senderIsDonor = it[usersTable.isDonor]
+                    senderIsDonor = it[usersTable.donationAmount] > 0,
+                    reactions = it[table.reactions] ?: emptyList()
                 )
             }
     }

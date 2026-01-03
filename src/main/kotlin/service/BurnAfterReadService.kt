@@ -93,7 +93,7 @@ object BurnAfterReadService: KoinComponent
                 senderName = "",
                 time = 0,
                 readAt = null,
-            ))
+            ), silent = true)
 
             logger.info("Deleted expired message ${info.messageId} from chat ${info.chatId}")
         }

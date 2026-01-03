@@ -22,6 +22,7 @@ private val packetHandlers: Map<String, PacketHandler> = listOf(
     SetDoNotDisturb,
     SetBurnTimeHandler,
     MarkMessageReadHandler,
+    ToggleReactionHandler,
     // Friend packets
     GetFriendsHandler,
     AddFriendHandler,
@@ -80,11 +81,7 @@ fun Route.webSocketRoute() = webSocket("/socket") socket@
 
             // Find and execute packet handler
             val handler = packetHandlers[packetName.lowercase()]
-            if (handler != null)
-            {
-                handler.handle(this@socket, packetData, user)
-            }
-            // Unknown packet - silently ignore or you can add logging here
+            handler?.handle(this@socket, packetData, user)
         }
     }
     finally

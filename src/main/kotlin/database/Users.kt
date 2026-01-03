@@ -26,7 +26,7 @@ class Users: SqlDao<Users.UserTable>(UserTable)
         val publicKey = text("public_key")
         val privateKey = text("private_key")
         val signature = text("signature").default("")
-        val isDonor = bool("is_donor").default(false)
+        val donationAmount = long("donation_amount").default(0)
     }
 
     private fun deserialize(row: ResultRow): User = User(
@@ -36,7 +36,7 @@ class Users: SqlDao<Users.UserTable>(UserTable)
         publicKey = row[table.publicKey],
         privateKey = row[table.privateKey],
         signature = row[table.signature],
-        isDonor = row[table.isDonor],
+        isDonor = row[table.donationAmount] > 0,
     )
 
     suspend fun createUser(
@@ -86,8 +86,13 @@ class Users: SqlDao<Users.UserTable>(UserTable)
         }
     }
 
-    suspend fun getAllDonors(): List<User> = query()
+    suspend fun getDonors(): List<Pair<User, Long>> = query()
     {
-        table.selectAll().where { table.isDonor eq true }.orderBy(table.id to SortOrder.ASC).map(::deserialize)
+        table.selectAll().where { table.donationAmount greater 0 }.orderBy(table.donationAmount to SortOrder.DESC)
+            .map { row ->
+                val user = deserialize(row)
+                val amount = row[table.donationAmount]
+                user to amount
+            }
     }
 }

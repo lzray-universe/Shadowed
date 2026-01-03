@@ -14,9 +14,11 @@ import org.jetbrains.exposed.sql.insertAndGetId
 import org.jetbrains.exposed.sql.kotlin.datetime.timestamp
 import org.jetbrains.exposed.sql.kotlin.datetime.timestampWithTimeZone
 import org.jetbrains.exposed.sql.selectAll
+import org.koin.core.component.inject
 
 class Broadcasts: SqlDao<Broadcasts.BroadcastTable>(BroadcastTable)
 {
+    private val users by inject<Users>()
     object BroadcastTable: LongIdTable("broadcasts")
     {
         val sender = reference(
@@ -56,22 +58,23 @@ class Broadcasts: SqlDao<Broadcasts.BroadcastTable>(BroadcastTable)
     {
         table
             .join(
-                Users.UserTable,
+                users.table,
                 JoinType.LEFT,
-                additionalConstraint = { table.sender eq Users.UserTable.id }
+                additionalConstraint = { table.sender eq users.table.id }
             )
             .selectAll()
             .where { table.id eq id }
             .singleOrNull()
-            ?.let {
+            ?.let()
+            {
                 Broadcast(
                     id = it[table.id].value,
                     senderId = it[table.sender]?.value,
-                    senderName = it.getOrNull(Users.UserTable.username),
+                    senderName = it.getOrNull(users.table.username),
                     content = it[table.content],
                     system = it[table.system],
                     time = it[table.time].toEpochMilliseconds(),
-                    senderIsDonor = it.getOrNull(Users.UserTable.isDonor) ?: false
+                    senderIsDonor = (it.getOrNull(users.table.donationAmount) ?: 0) > 0
                 )
             }
     }
@@ -79,27 +82,28 @@ class Broadcasts: SqlDao<Broadcasts.BroadcastTable>(BroadcastTable)
     suspend fun getBroadcasts(system: Boolean?, before: Long, count: Int): List<Broadcast> = query()
     {
         table.join(
-            Users.UserTable,
+            users.table,
             JoinType.LEFT,
-            additionalConstraint = { table.sender eq Users.UserTable.id }
-        )
-            .selectAll()
-            .where {
-                if (system == null) Op.TRUE
-                else table.system eq system
+            additionalConstraint = { table.sender eq users.table.id }
+        ).selectAll()
+            .let()
+            {
+                if (system != null) it.where { table.system eq system }
+                else it
             }
             .andWhere { table.id less before }
             .orderBy(table.time to SortOrder.DESC)
             .limit(count)
-            .map {
+            .map()
+            {
                 Broadcast(
                     id = it[table.id].value,
                     senderId = it[table.sender]?.value,
-                    senderName = it.getOrNull(Users.UserTable.username),
+                    senderName = it.getOrNull(users.table.username),
                     content = it[table.content],
                     system = it[table.system],
                     time = it[table.time].toEpochMilliseconds(),
-                    senderIsDonor = it.getOrNull(Users.UserTable.isDonor) ?: false
+                    senderIsDonor = (it.getOrNull(users.table.donationAmount) ?: 0) > 0
                 )
             }
     }

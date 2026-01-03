@@ -13,5 +13,6 @@ data class Message(
     val time: Long,
     val readAt: Long? = null, // 已读时间戳，null表示未读
     val replyTo: ReplyInfo? = null,
-    val senderIsDonor: Boolean = false
+    val senderIsDonor: Boolean = false,
+    val reactions: List<Reaction> = emptyList() // 消息的反应列表
 )
